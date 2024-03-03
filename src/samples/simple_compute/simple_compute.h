@@ -49,6 +49,11 @@ public:
   VkDebugReportCallbackEXT m_debugReportCallback = nullptr;
 private:
 
+    
+  std::vector<float> arr;
+  float LO = -10000000.0;
+  float HI = 10000000.0;
+
   VkInstance       m_instance       = VK_NULL_HANDLE;
   VkCommandPool    m_commandPool    = VK_NULL_HANDLE;
   VkPhysicalDevice m_physicalDevice = VK_NULL_HANDLE;

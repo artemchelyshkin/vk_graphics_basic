@@ -3,6 +3,8 @@
 #include <vk_pipeline.h>
 #include <vk_buffers.h>
 #include <vk_utils.h>
+#include <random>
+#include <chrono>
 
 SimpleCompute::SimpleCompute(uint32_t a_length) : m_length(a_length)
 {
@@ -12,6 +14,7 @@ SimpleCompute::SimpleCompute(uint32_t a_length) : m_length(a_length)
   m_enableValidation = true;
 #endif
 }
+
 
 void SimpleCompute::SetupValidationLayers()
 {
@@ -97,8 +100,9 @@ void SimpleCompute::SetupSimplePipeline()
   // Заполнение буферов
   std::vector<float> values(m_length);
   for (uint32_t i = 0; i < values.size(); ++i) {
-    values[i] = (float)i;
+    values[i] = LO + static_cast<float>(rand()) / (static_cast<float>(RAND_MAX / (HI - LO)));
   }
+  arr = values;
   m_pCopyHelper->UpdateBuffer(m_A, 0, values.data(), sizeof(float) * values.size());
   for (uint32_t i = 0; i < values.size(); ++i) {
     values[i] = (float)i * i;
@@ -122,7 +126,7 @@ void SimpleCompute::BuildCommandBufferSimple(VkCommandBuffer a_cmdBuff, VkPipeli
 
   vkCmdPushConstants(a_cmdBuff, m_layout, VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(m_length), &m_length);
 
-  vkCmdDispatch(a_cmdBuff, 1, 1, 1);
+  vkCmdDispatch(a_cmdBuff, 1 + (m_length - 1) / 1024, 1, 1);
 
   VK_CHECK_RESULT(vkEndCommandBuffer(a_cmdBuff));
 }
@@ -217,15 +221,43 @@ void SimpleCompute::Execute()
   fenceCreateInfo.flags = 0;
   VK_CHECK_RESULT(vkCreateFence(m_device, &fenceCreateInfo, NULL, &m_fence));
 
+  auto start_time = std::chrono::high_resolution_clock::now();
   // Отправляем буфер команд на выполнение
   VK_CHECK_RESULT(vkQueueSubmit(m_computeQueue, 1, &submitInfo, m_fence));
 
   //Ждём конца выполнения команд
   VK_CHECK_RESULT(vkWaitForFences(m_device, 1, &m_fence, VK_TRUE, 100000000000));
+  auto end_time = std::chrono::high_resolution_clock::now();
 
+  float GPU_sum = 0.0;
   std::vector<float> values(m_length);
   m_pCopyHelper->ReadBuffer(m_sum, 0, values.data(), sizeof(float) * values.size());
   for (auto v: values) {
-    std::cout << v << ' ';
+    GPU_sum += v;
   }
+  auto GPU_time = (end_time - start_time) / std::chrono::milliseconds(1);
+
+
+  std::cout << "GPU sum: " << GPU_sum << ", GPU time: " << GPU_time << std::endl;
+
+  auto CPU_start_time = std::chrono::high_resolution_clock::now();
+  float CPU_sum = 0.0;
+  for (int idx = 0; idx < arr.size(); ++idx)
+  {
+    float window_res = 0.0;
+    for (int i = idx - 3; i < idx + 4; ++i)
+    {
+      if ((i >= 0) && (i < arr.size()))
+      {
+        window_res += arr[i];
+      }
+    }
+    CPU_sum += arr[idx] - window_res / 7.0;
+  }
+  auto CPU_end_time = std::chrono::high_resolution_clock::now();
+
+  auto CPU_time = (CPU_end_time - CPU_start_time) / std::chrono::milliseconds(1);
+
+
+  std::cout << "CPU sum: " << CPU_sum << ", CPU time: " << CPU_time << std::endl;
 }
